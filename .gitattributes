@@ -1,0 +1,9 @@
+# 仓库内容以 Unix 换行保存 —— 这些脚本/补丁要在 Termux 与 Linux 上用，
+# CRLF 会让 sh 脚本报 "bad interpreter" 之类的错，也会让 patch 匹配失败。
+* text=auto eol=lf
+*.patch text eol=lf
+*.sh text eol=lf
+*.mjs text eol=lf
+*.ts text eol=lf
+*.js text eol=lf
+*.md text eol=lf

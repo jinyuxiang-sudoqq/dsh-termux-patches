@@ -1,0 +1,24 @@
+--- a/native/system/packages/entry/src/flock.ts	2026-10-13 21:41:15.219801541 +0800
++++ b/native/system/packages/entry/src/flock.ts	2026-10-13 21:41:15.219801541 +0800
+@@ -12,6 +12,21 @@
+ function loadBinding(): FlockBinding {
+   if (binding) return binding
+   const { platform, arch } = process
++  // Patched for Android/Termux: process.platform is "android", which the upstream
++  // guard below rejects, and no android-arm64 prebuilt addon exists.
++  // Termux runs a single DSH process and the JSONL backend's in-process write claim
++  // already excludes every writer, so granting the lock locally is the same trade the
++  // webworker build makes (see packages/experimental/webworker-runtime/src/node/
++  // external_packages/node-addon-system-flock.ts). Other platforms keep the native binding.
++  if (platform === 'android') {
++    binding = {
++      tryLock: (_fd: number, callback: (errno: number) => void) => {
++        queueMicrotask(() => callback(0))
++      },
++    } as unknown as FlockBinding
++    return binding
++  }
++
+   if (platform !== 'linux' && platform !== 'darwin') {
+     throw Object.assign(new Error(`flock is not supported on ${platform}-${arch}`), {
+       code: 'ERR_FLOCK_UNSUPPORTED_PLATFORM',

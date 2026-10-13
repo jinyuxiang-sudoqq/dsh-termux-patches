@@ -1,0 +1,48 @@
+--- a/packages/session/session-persistence-jsonl/src/generation.ts	2026-10-13 21:41:15.371801541 +0800
++++ b/packages/session/session-persistence-jsonl/src/generation.ts	2026-10-13 21:41:15.371801541 +0800
+@@ -10,6 +10,8 @@
+ import { currentSessionMessageProjections } from '@deepseek-ai/dsh-session-format-catalog/message-projections'
+ import { createHash, randomBytes } from 'node:crypto'
+ import {
++  copyFile as fsCopyFile,
++  constants as fsConstants,
+   link as fsLink,
+   lstat as fsLstat,
+   open as fsOpen,
+@@ -814,6 +816,19 @@
+   }
+ }
+ 
++/**
++ * Exclusive copy fallback for platforms whose filesystems refuse hard links.
++ *
++ * Android's app data partition rejects cross-directory hard linking, which makes the
++ * POSIX publication path fail with EACCES even though nothing is wrong with the
++ * session. COPYFILE_EXCL preserves the exact guarantee that path needs: create the
++ * destination only if it does not already exist. An existing destination still
++ * rejects with EEXIST, so the caller's conflict branch is unchanged.
++ */
++async function copyFileExclusive(existingPath: string, newPath: string): Promise<void> {
++  await fsCopyFile(existingPath, newPath, fsConstants.COPYFILE_EXCL)
++}
++
+ async function publishCurrentExclusive(
+   staged: string,
+   currentPath: string,
+@@ -834,7 +849,15 @@
+     await internals.fs.link(staged, currentPath)
+   } catch (error) {
+     if (isEEXIST(error)) return false
+-    throw error
++    /* publication fallback: hard links can be refused by the platform (Android's app
++       data partition does), while an exclusive copy carries the same "create only if
++       absent" guarantee this publication path relies on. */
++    try {
++      await copyFileExclusive(staged, currentPath)
++    } catch (fallbackError) {
++      if (isEEXIST(fallbackError)) return false
++      throw error
++    }
+   }
+   await syncDirectory(dirname(currentPath), internals)
+   return true

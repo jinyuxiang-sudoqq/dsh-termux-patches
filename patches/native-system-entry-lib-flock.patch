@@ -1,0 +1,14 @@
+--- a/native/system/packages/entry/lib/flock.js	2026-10-13 21:41:15.263801541 +0800
++++ b/native/system/packages/entry/lib/flock.js	2026-10-13 21:41:15.263801541 +0800
+@@ -7,6 +7,11 @@
+     if (binding)
+         return binding;
+     const { platform, arch } = process;
++    // Patched for Android/Termux (see src/flock.ts).
++    if (platform === 'android') {
++        binding = { tryLock: (_fd, callback) => { queueMicrotask(() => callback(0)); } };
++        return binding;
++    }
+     if (platform !== 'linux' && platform !== 'darwin') {
+         throw Object.assign(new Error(`flock is not supported on ${platform}-${arch}`), {
+             code: 'ERR_FLOCK_UNSUPPORTED_PLATFORM',

@@ -1,0 +1,59 @@
+--- a/packages/session/session-persistence-jsonl/lib/index.js	2026-10-13 21:41:15.339801541 +0800
++++ b/packages/session/session-persistence-jsonl/lib/index.js	2026-10-13 21:41:15.339801541 +0800
+@@ -1,7 +1,7 @@
+ import z from "@deepseek-ai/schemastery";
+ import { SessionFormatUnsupportedMigrationError, createSessionFormatCatalogWithChildren, historicalSessionFormatCatalog, sessionFormatCatalog } from "@deepseek-ai/dsh-session-format-catalog";
+ import { readdirSync } from "node:fs";
+-import { link, lstat, mkdir, mkdtemp, open, readFile, readdir, realpath, rm, stat, truncate } from "node:fs/promises";
++import { constants as fsConstants, copyFile as fsCopyFile, link, lstat, mkdir, mkdtemp, open, readFile, readdir, realpath, rm, stat, truncate } from "node:fs/promises";
+ import { basename, dirname, isAbsolute, join, parse, resolve, toNamespacedPath } from "node:path";
+ import { performance } from "node:perf_hooks";
+ import { scheduler } from "node:timers/promises";
+@@ -2030,14 +2030,24 @@
+ 		/* v8 ignore next -- the filesystem error is already complete. */
+ 		throw error;
+ 	}
+-	try {
+-		await internals.fs.link(staged, currentPath);
+-	} catch (error) {
+-		/* v8 ignore else -- a non-collision filesystem error propagates unchanged. */
+-		if (isEEXIST(error)) return false;
+-		/* v8 ignore next -- the filesystem error is already complete. */
+-		throw error;
+-	}
++	const linkError = await (async () => {
++		try {
++			await internals.fs.link(staged, currentPath);
++			return undefined;
++		} catch (error) {
++			if (isEEXIST(error)) return error;
++			/* publication fallback: Android's app data partition refuses hard links, while an
++			   exclusive copy carries the same "create only if absent" guarantee. */
++			try {
++				await fsCopyFile(staged, currentPath, fsConstants.COPYFILE_EXCL);
++				return undefined;
++			} catch (fallbackError) {
++				if (isEEXIST(fallbackError)) return fallbackError;
++				throw error;
++			}
++		}
++	})();
++	if (linkError !== undefined) return false;
+ 	await syncDirectory(dirname(currentPath), internals);
+ 	return true;
+ }
+@@ -3143,7 +3153,13 @@
+ 		const tmp = await this.writeSyncedTempFile(finalPath, content);
+ 		let linked = false;
+ 		try {
+-			await link(tmp, finalPath);
++			try {
++				await link(tmp, finalPath);
++			} catch (linkError) {
++				/* Android's app data partition refuses hard links; an exclusive copy keeps the
++				   same "create only if absent" guarantee this publication step relies on. */
++				await fsCopyFile(tmp, finalPath, fsConstants.COPYFILE_EXCL);
++			}
+ 			linked = true;
+ 		} finally {
+ 			/* v8 ignore next -- link failure is the TOCTOU/IO race guarded above; not reachable in test */
